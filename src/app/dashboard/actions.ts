@@ -5,7 +5,12 @@ import { prisma } from "@/lib/prisma";
 import type { ArtistType, ArtistOrigin } from "@prisma/client";
 import { upsertArtistFromSpotify, upsertSongFromSpotify } from "@/lib/catalog";
 import type { SpotifyArtistResult, SpotifyTrackResult } from "@/lib/spotify";
-import { getMemberEnrichmentSource, pickLatinAlias } from "@/lib/musicbrainz";
+import {
+  classifyArtist,
+  getCurrentMembers,
+  getMemberEnrichmentSource,
+  pickLatinAlias,
+} from "@/lib/musicbrainz";
 import { getWikidataImageAndLabel } from "@/lib/wikidata";
 import { algorithmicRomanize, needsRomanization, isLatinText } from "@/lib/romanize";
 import { requireUserId } from "@/lib/require-user";
@@ -211,17 +216,56 @@ export async function enrichGroupMembers(
 ): Promise<{ checked: number; updated: number }> {
   const userId = await requireUserId();
 
+  const group = await prisma.artist.findUnique({ where: { id: groupId } });
+  if (!group) throw new Error("Group not found");
+
+  // A member can lack a MusicBrainz ID for two different reasons: the
+  // *group itself* was never matched to MusicBrainz (this is the common
+  // case for members the user added by hand — there was no MusicBrainz
+  // group to source them from in the first place), or MusicBrainz simply
+  // doesn't have that person. Try to fix the first case before giving up,
+  // by re-running the same classification used when the artist was first
+  // added — it's a one-shot lookup at add-time, so an artist added before
+  // MusicBrainz retry logic existed (or hit a transient 503) can be stuck
+  // with no musicbrainzId forever otherwise.
+  let groupMbId = group.musicbrainzId;
+  if (!groupMbId && group.spotifyId) {
+    const classification = await classifyArtist(group.name, group.spotifyId);
+    if (classification) {
+      groupMbId = classification.musicbrainzId;
+      await prisma.artist.update({ where: { id: group.id }, data: { musicbrainzId: groupMbId } });
+    }
+  }
+
   // Always re-checks eligible members — including ones already attempted —
   // so a member that failed last time (transient API flakiness, or a
   // source that simply didn't have data yet) gets another shot. A manual
   // edit is the only thing that opts a member out permanently.
   const members = await prisma.groupMember.findMany({
-    where: { artistId: groupId, musicbrainzId: { not: null }, manuallyEdited: false },
+    where: { artistId: groupId, manuallyEdited: false },
   });
+
+  // Members added by hand (source: MANUAL) usually have no musicbrainzId of
+  // their own. Now that we have the group's MusicBrainz ID, match them by
+  // name against MusicBrainz's current-member list for that group and
+  // adopt the id — that's what unlocks alias/photo lookups for them below.
+  const unresolved = members.filter((m) => !m.musicbrainzId);
+  if (groupMbId && unresolved.length > 0) {
+    const mbMembers = await getCurrentMembers(groupMbId);
+    const byNormalizedName = new Map(mbMembers.map((m) => [normalizeMemberName(m.name), m.musicbrainzId]));
+    for (const member of unresolved) {
+      const matchedId = byNormalizedName.get(normalizeMemberName(member.name));
+      if (!matchedId) continue;
+      await prisma.groupMember.update({ where: { id: member.id }, data: { musicbrainzId: matchedId } });
+      member.musicbrainzId = matchedId; // keep the in-memory copy in sync for the loop below
+    }
+  }
 
   let checked = 0;
   let updated = 0;
   for (const member of members) {
+    if (!member.musicbrainzId) continue; // no MusicBrainz identity found for this one — nothing to enrich from
+
     const needsName = needsRomanization(member.name);
     const needsImage = !member.imageUrl;
     if (!needsName && !needsImage) continue; // already fully resolved, nothing to check
@@ -283,6 +327,15 @@ export async function setArtistOrigin(artistId: string, origin: ArtistOrigin) {
 }
 
 // ---------- helpers ----------
+
+/** Loose match for lining up a manually-typed member name against
+ *  MusicBrainz's version of it (casing/accent differences shouldn't block
+ *  the match — "Rosé" and "ROSÉ" are the same person). */
+const COMBINING_MARKS_RE = /[\u0300-\u036f]/g;
+
+function normalizeMemberName(name: string): string {
+  return name.trim().toLowerCase().normalize("NFKD").replace(COMBINING_MARKS_RE, "");
+}
 
 async function reindexRanks<T>(
   fetchRows: () => Promise<T[]>,

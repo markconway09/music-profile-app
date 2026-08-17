@@ -186,7 +186,9 @@ export async function getMemberEnrichmentSource(
   }
 }
 
-const LATIN_ALIAS_RE = /^[A-Za-z0-9\s\-'.]+$/;
+// Kept in sync with romanize.ts's LATIN_RE — accented Latin letters (é, ñ,
+// etc.) are valid, already-fine display names, not something to reject.
+const LATIN_ALIAS_RE = /^[A-Za-z0-9À-ÖØ-öø-ÿ\s\-'.]+$/;
 
 /** Picks the best Latin-script name from a MusicBrainz alias list, if any. */
 export function pickLatinAlias(aliases: MemberEnrichmentSource["aliases"]): string | null {

@@ -3,7 +3,12 @@
 // characters alone — that's left to the MusicBrainz-alias / Wikidata-label
 // fallbacks in the enrichment pipeline.
 
-const LATIN_RE = /^[A-Za-z0-9\s\-'.]+$/;
+// Latin-1 Supplement letters (À-ÖØ-öø-ÿ) cover accented stage names like
+// "ROSÉ" — without them, an already-fine name gets wrongly flagged as
+// needing romanization and run through the alias/algorithmic pipeline,
+// which can replace a perfectly good stylized name with something else
+// (e.g. MusicBrainz's legal-name alias).
+const LATIN_RE = /^[A-Za-z0-9À-ÖØ-öø-ÿ\s\-'.]+$/;
 const HANGUL_RE = /[가-힣]/;
 const KANA_RE = /[぀-ゟ゠-ヿ]/;
 const KANJI_RE = /[一-鿿]/;
