@@ -6,6 +6,7 @@ import { FavoriteArtistsEditor } from "@/components/dashboard/FavoriteArtistsEdi
 import { ArtistMetaEditor } from "@/components/dashboard/ArtistMetaEditor";
 import { MemberBiasTicker } from "@/components/dashboard/MemberBiasTicker";
 import { MemberManager } from "@/components/dashboard/MemberManager";
+import { CollapsibleGroup } from "@/components/dashboard/CollapsibleGroup";
 import { UltBiasRankingEditor } from "@/components/dashboard/UltBiasRankingEditor";
 
 export default async function ArtistsPage() {
@@ -77,35 +78,43 @@ export default async function ArtistsPage() {
             Add a group to your favorite artists to tick biases.
           </p>
         ) : (
-          <div className="flex flex-col gap-8">
-            {favoritedGroups.map((group) => (
-              <div key={group.id}>
-                <h3 className="mb-2 text-sm font-medium text-black/70 dark:text-white/70">
-                  {group.name}
-                </h3>
-                <MemberBiasTicker
-                  groupId={group.id}
-                  members={group.members.map((m) => {
-                    const b = biasByMemberId.get(m.id);
-                    return {
+          <div className="flex flex-col gap-3">
+            {favoritedGroups.map((group) => {
+              const groupMembers = group.members.map((m) => {
+                const b = biasByMemberId.get(m.id);
+                return {
+                  id: m.id,
+                  name: m.name,
+                  imageUrl: m.imageUrl,
+                  isBias: Boolean(b),
+                  isUlt: Boolean(b?.isUlt),
+                };
+              });
+              const biasCount = groupMembers.filter((m) => m.isBias).length;
+              const ult = groupMembers.find((m) => m.isUlt);
+
+              return (
+                <CollapsibleGroup
+                  key={group.id}
+                  title={group.name}
+                  subtitle={
+                    biasCount === 0
+                      ? undefined
+                      : `${biasCount} bias${biasCount === 1 ? "" : "es"}${ult ? ` · ult: ${ult.name}` : ""}`
+                  }
+                >
+                  <MemberBiasTicker groupId={group.id} members={groupMembers} />
+                  <MemberManager
+                    groupId={group.id}
+                    members={group.members.map((m) => ({
                       id: m.id,
                       name: m.name,
                       imageUrl: m.imageUrl,
-                      isBias: Boolean(b),
-                      isUlt: Boolean(b?.isUlt),
-                    };
-                  })}
-                />
-                <MemberManager
-                  groupId={group.id}
-                  members={group.members.map((m) => ({
-                    id: m.id,
-                    name: m.name,
-                    imageUrl: m.imageUrl,
-                  }))}
-                />
-              </div>
-            ))}
+                    }))}
+                  />
+                </CollapsibleGroup>
+              );
+            })}
           </div>
         )}
       </Section>
