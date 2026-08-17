@@ -15,16 +15,27 @@ async function throttle() {
   lastRequestAt = Date.now();
 }
 
+// MusicBrainz's shared public instance returns 503 ("currently busy, try
+// again later") fairly often under normal load — not a sign of anything
+// wrong on our end. A couple of short retries meaningfully improves success
+// rate for what would otherwise silently degrade to "unknown" every time.
+const MAX_RETRIES = 2;
+
 async function mbFetch<T>(path: string): Promise<T> {
-  await throttle();
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!res.ok) {
+  for (let attempt = 0; ; attempt++) {
+    await throttle();
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (res.ok) return res.json() as Promise<T>;
+
+    if (res.status === 503 && attempt < MAX_RETRIES) {
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+      continue;
+    }
     throw new Error(`MusicBrainz request failed: ${res.status} ${await res.text()}`);
   }
-  return res.json() as Promise<T>;
 }
 
 interface MbArtistSearchHit {
@@ -32,6 +43,8 @@ interface MbArtistSearchHit {
   name: string;
   score: number;
   type?: string; // "Person" | "Group" | "Orchestra" | "Choir" | "Character" | "Other"
+  country?: string; // ISO 3166-1 alpha-2, e.g. "KR", "JP"
+  area?: { name: string } | null;
 }
 
 interface MbArtistSearchResponse {
@@ -69,7 +82,19 @@ interface MbArtistDetail {
 export type ArtistClassification = {
   musicbrainzId: string;
   type: "SOLO" | "GROUP";
+  origin: "KPOP" | "JPOP" | "OTHER";
 };
+
+/** MusicBrainz's own country/area data is a far more reliable origin signal
+ *  than Spotify genre tags, which are frequently empty for K-pop/J-pop acts. */
+function inferOriginFromCountry(hit: MbArtistSearchHit): "KPOP" | "JPOP" | "OTHER" {
+  if (hit.country === "KR") return "KPOP";
+  if (hit.country === "JP") return "JPOP";
+  const area = hit.area?.name.toLowerCase() ?? "";
+  if (area.includes("korea")) return "KPOP";
+  if (area.includes("japan")) return "JPOP";
+  return "OTHER";
+}
 
 export type MusicBrainzMember = {
   musicbrainzId: string;
@@ -105,6 +130,7 @@ export async function classifyArtist(
         return {
           musicbrainzId: candidate.id,
           type: candidate.type === "Group" ? "GROUP" : "SOLO",
+          origin: inferOriginFromCountry(candidate),
         };
       }
     }

@@ -17,8 +17,14 @@ export async function upsertArtistFromSpotify(spotifyArtist: SpotifyArtistResult
   const existing = await prisma.artist.findUnique({ where: { spotifyId: spotifyArtist.spotifyId } });
   if (existing) return existing;
 
-  const origin = inferOriginFromGenres(spotifyArtist.genres);
   const classification = await classifyArtist(spotifyArtist.name, spotifyArtist.spotifyId);
+  // MusicBrainz's country data is far more reliable than Spotify genre tags
+  // (which are frequently empty for K-pop/J-pop acts) — only fall back to
+  // the genre guess when MusicBrainz didn't confidently place the artist.
+  const origin =
+    classification && classification.origin !== "OTHER"
+      ? classification.origin
+      : inferOriginFromGenres(spotifyArtist.genres);
 
   const artist = await prisma.artist.create({
     data: {
