@@ -226,24 +226,31 @@ export async function enrichGroupMembers(
     const needsName = needsRomanization(member.name);
     const needsImage = !member.imageUrl;
 
-    let newName: string | null = needsName ? algorithmicRomanize(member.name) : null;
+    let newName: string | null = null;
     let newImage: string | null = null;
 
-    // Only hit MusicBrainz (and possibly Wikidata) if algorithmic
-    // romanization couldn't fully resolve the name, or a photo is missing.
-    if ((needsName && !newName) || needsImage) {
+    if (needsName || needsImage) {
+      // Priority for the name: MusicBrainz's own English alias (most
+      // authoritative — it's the actual official spelling), then Wikidata's
+      // English label, and only if neither has anything do we fall back to
+      // algorithmic romanization ("direct translation" from the characters,
+      // which can't know e.g. that 지젤 is styled "Giselle").
       const source = await getMemberEnrichmentSource(member.musicbrainzId!);
-      if (source) {
-        if (needsName && !newName) {
-          newName = pickLatinAlias(source.aliases);
+
+      if (needsName && source) {
+        newName = pickLatinAlias(source.aliases);
+      }
+
+      if (source?.wikidataQid && (needsImage || (needsName && !newName))) {
+        const wd = await getWikidataImageAndLabel(source.wikidataQid);
+        if (needsImage) newImage = wd.imageUrl;
+        if (needsName && !newName && wd.enLabel && isLatinText(wd.enLabel)) {
+          newName = wd.enLabel;
         }
-        if (needsImage && source.wikidataQid) {
-          const wd = await getWikidataImageAndLabel(source.wikidataQid);
-          newImage = wd.imageUrl;
-          if (needsName && !newName && wd.enLabel && isLatinText(wd.enLabel)) {
-            newName = wd.enLabel;
-          }
-        }
+      }
+
+      if (needsName && !newName) {
+        newName = algorithmicRomanize(member.name);
       }
     }
 
