@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
+// Lists recently created users, so this must not be frozen at build time.
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const recentUsers = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
