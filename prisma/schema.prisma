@@ -21,7 +21,6 @@ model User {
 
   favoriteArtists UserFavoriteArtist[]
   topSongs        UserTopSong[]
-  memberRankings  UserMemberRanking[]
   biases          UserBias[]
 }
 
@@ -51,9 +50,8 @@ model Artist {
   songs   Song[]
   members GroupMember[]
 
-  favoritedBy     UserFavoriteArtist[]
-  memberRankings  UserMemberRanking[]
-  biases          UserBias[]
+  favoritedBy UserFavoriteArtist[]
+  biases      UserBias[]
 
   @@index([name])
 }
@@ -88,7 +86,6 @@ model GroupMember {
   source        MemberSource @default(MANUAL)
   artist        Artist       @relation(fields: [artistId], references: [id], onDelete: Cascade)
 
-  rankedBy UserMemberRanking[]
   biasedBy UserBias[]
 
   @@index([artistId])
@@ -120,37 +117,21 @@ model UserTopSong {
   @@unique([userId, rank])
 }
 
-model UserMemberRanking {
-  userId   String
-  groupId  String
-  memberId String
-  rank     Int
-
-  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group  Artist       @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  member GroupMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
-
-  @@id([userId, groupId, memberId])
-  @@unique([userId, groupId, rank])
-}
-
-enum BiasCategory {
-  VOCAL
-  DANCE
-  VISUAL
-  RAP
-  OVERALL
-}
-
+// A member the user has ticked as a "bias" for that group. `isUlt` marks
+// their single ultimate bias per group; `ultRank` orders ult biases across
+// all of the user's groups (null for non-ult biases). Checking "ult" implies
+// "bias" — the row's mere existence is the bias tick, isUlt is an add-on.
 model UserBias {
   userId   String
-  groupId  String
   memberId String
-  category BiasCategory
+  groupId  String
+  isUlt    Boolean @default(false)
+  ultRank  Int?
 
   user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group  Artist       @relation(fields: [groupId], references: [id], onDelete: Cascade)
   member GroupMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  group  Artist      @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  @@id([userId, groupId, category])
+  @@id([userId, memberId])
+  @@unique([userId, ultRank])
 }

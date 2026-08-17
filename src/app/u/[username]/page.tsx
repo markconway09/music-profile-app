@@ -19,10 +19,6 @@ export default async function ProfilePage({
         include: { song: { include: { artist: true } } },
         orderBy: { rank: "asc" },
       },
-      memberRankings: {
-        include: { member: true, group: true },
-        orderBy: [{ groupId: "asc" }, { rank: "asc" }],
-      },
       biases: {
         include: { member: true, group: true },
       },
@@ -31,8 +27,25 @@ export default async function ProfilePage({
 
   if (!user) notFound();
 
-  const rankingsByGroup = groupBy(user.memberRankings, (r) => r.group.id);
-  const biasesByGroup = groupBy(user.biases, (b) => b.group.id);
+  // user.topSongs is already ordered by rank asc, so the first match per
+  // artist is that user's highest-ranked song from them.
+  const topSongByArtistId = new Map<string, (typeof user.topSongs)[number]>();
+  for (const ts of user.topSongs) {
+    if (!topSongByArtistId.has(ts.song.artistId)) {
+      topSongByArtistId.set(ts.song.artistId, ts);
+    }
+  }
+
+  const biasesByGroupId = new Map<string, typeof user.biases>();
+  for (const b of user.biases) {
+    const list = biasesByGroupId.get(b.groupId) ?? [];
+    list.push(b);
+    biasesByGroupId.set(b.groupId, list);
+  }
+
+  const ultBiasesRanked = user.biases
+    .filter((b) => b.isUlt)
+    .sort((a, b) => (a.ultRank ?? 0) - (b.ultRank ?? 0));
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
@@ -54,11 +67,13 @@ export default async function ProfilePage({
         ) : (
           <ol className="flex flex-col gap-2">
             {user.favoriteArtists.map((fa) => (
-              <RankedRow
+              <ArtistRow
                 key={fa.artistId}
                 rank={fa.rank}
-                label={fa.artist.name}
+                name={fa.artist.name}
                 imageUrl={fa.artist.imageUrl}
+                topSong={topSongByArtistId.get(fa.artistId)}
+                biases={fa.artist.type === "GROUP" ? biasesByGroupId.get(fa.artistId) : undefined}
               />
             ))}
           </ol>
@@ -83,70 +98,21 @@ export default async function ProfilePage({
         )}
       </Section>
 
-      <Section title="Member Rankings">
-        {Object.keys(rankingsByGroup).length === 0 ? (
+      <Section title="Ultimate Biases">
+        {ultBiasesRanked.length === 0 ? (
           <Empty />
         ) : (
-          <div className="flex flex-col gap-6">
-            {Object.values(rankingsByGroup).map((rankings) => (
-              <div key={rankings[0].group.id}>
-                <h3 className="mb-2 text-sm font-medium text-black/70 dark:text-white/70">
-                  {rankings[0].group.name}
-                </h3>
-                <ol className="flex flex-col gap-2">
-                  {rankings.map((r) => (
-                    <RankedRow
-                      key={r.memberId}
-                      rank={r.rank}
-                      label={r.member.name}
-                      imageUrl={r.member.imageUrl}
-                    />
-                  ))}
-                </ol>
-              </div>
+          <ol className="flex flex-col gap-2">
+            {ultBiasesRanked.map((b, idx) => (
+              <RankedRow
+                key={b.memberId}
+                rank={idx + 1}
+                label={b.member.name}
+                sublabel={b.group.name}
+                imageUrl={b.member.imageUrl}
+              />
             ))}
-          </div>
-        )}
-      </Section>
-
-      <Section title="Biases">
-        {Object.keys(biasesByGroup).length === 0 ? (
-          <Empty />
-        ) : (
-          <div className="flex flex-col gap-6">
-            {Object.values(biasesByGroup).map((biases) => (
-              <div key={biases[0].group.id}>
-                <h3 className="mb-2 text-sm font-medium text-black/70 dark:text-white/70">
-                  {biases[0].group.name}
-                </h3>
-                <ul className="flex flex-wrap gap-2">
-                  {biases.map((b) => (
-                    <li
-                      key={`${b.groupId}-${b.category}`}
-                      className="flex items-center gap-2 rounded-full border border-black/10 py-1 pl-1 pr-3 text-sm dark:border-white/20"
-                    >
-                      {b.member.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={b.member.imageUrl}
-                          alt=""
-                          className="h-6 w-6 shrink-0 rounded-full object-cover"
-                        />
-                      ) : (
-                        <span className="h-6 w-6 shrink-0 rounded-full bg-black/5 dark:bg-white/10" />
-                      )}
-                      <span>
-                        <span className="text-black/50 dark:text-white/50">
-                          {b.category.toLowerCase()}
-                        </span>{" "}
-                        · {b.member.name}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+          </ol>
         )}
       </Section>
     </div>
@@ -159,6 +125,124 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="mb-3 text-lg font-semibold">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function ArtistRow({
+  rank,
+  name,
+  imageUrl,
+  topSong,
+  biases,
+}: {
+  rank: number;
+  name: string;
+  imageUrl: string | null;
+  topSong?: { song: { title: string; imageUrl: string | null } };
+  biases?: {
+    memberId: string;
+    isUlt: boolean;
+    member: { name: string; imageUrl: string | null };
+  }[];
+}) {
+  const ult = biases?.find((b) => b.isUlt);
+  const others = biases?.filter((b) => !b.isUlt) ?? [];
+  const hasDetails = Boolean(topSong) || Boolean(ult) || others.length > 0;
+
+  return (
+    <li className="group rounded-lg border border-black/10 dark:border-white/15">
+      <details>
+        <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden">
+          <span className="w-6 shrink-0 text-right text-sm font-semibold text-black/40 dark:text-white/40">
+            {rank}
+          </span>
+          {imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imageUrl} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+          ) : (
+            <span className="h-10 w-10 shrink-0 rounded bg-black/5 dark:bg-white/10" />
+          )}
+          <span className="flex-1">{name}</span>
+          {hasDetails && (
+            <svg
+              viewBox="0 0 20 20"
+              className="h-4 w-4 shrink-0 text-black/40 transition-transform group-open:rotate-90 dark:text-white/40"
+              fill="currentColor"
+            >
+              <path d="M7 4l6 6-6 6V4z" />
+            </svg>
+          )}
+        </summary>
+
+        {hasDetails && (
+          <div className="flex flex-col gap-3 border-t border-black/10 px-3 py-3 dark:border-white/15">
+            {topSong && (
+              <div>
+                <p className="mb-1 text-xs text-black/40 dark:text-white/40">
+                  Highest-ranked song
+                </p>
+                <div className="flex items-center gap-2">
+                  {topSong.song.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={topSong.song.imageUrl}
+                      alt=""
+                      className="h-8 w-8 shrink-0 rounded object-cover"
+                    />
+                  ) : (
+                    <span className="h-8 w-8 shrink-0 rounded bg-black/5 dark:bg-white/10" />
+                  )}
+                  <span className="text-sm">{topSong.song.title}</span>
+                </div>
+              </div>
+            )}
+
+            {(ult || others.length > 0) && (
+              <div>
+                <p className="mb-1 text-xs text-black/40 dark:text-white/40">Biases</p>
+                <ul className="flex flex-wrap gap-2">
+                  {ult && <BiasBadge name={ult.member.name} imageUrl={ult.member.imageUrl} isUlt />}
+                  {others.map((b) => (
+                    <BiasBadge key={b.memberId} name={b.member.name} imageUrl={b.member.imageUrl} />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </details>
+    </li>
+  );
+}
+
+function BiasBadge({
+  name,
+  imageUrl,
+  isUlt,
+}: {
+  name: string;
+  imageUrl: string | null;
+  isUlt?: boolean;
+}) {
+  return (
+    <li
+      className={`flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm ${
+        isUlt
+          ? "border-foreground/30 bg-foreground/5"
+          : "border-black/10 dark:border-white/20"
+      }`}
+    >
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+      ) : (
+        <span className="h-6 w-6 shrink-0 rounded-full bg-black/5 dark:bg-white/10" />
+      )}
+      <span>
+        {isUlt && <span className="text-black/50 dark:text-white/50">ult · </span>}
+        {name}
+      </span>
+    </li>
   );
 }
 
@@ -200,12 +284,4 @@ function Empty() {
   return (
     <p className="text-sm text-black/40 dark:text-white/40">Nothing here yet.</p>
   );
-}
-
-function groupBy<T, K extends string>(items: T[], key: (item: T) => K): Record<K, T[]> {
-  return items.reduce((acc, item) => {
-    const k = key(item);
-    (acc[k] ??= []).push(item);
-    return acc;
-  }, {} as Record<K, T[]>);
 }

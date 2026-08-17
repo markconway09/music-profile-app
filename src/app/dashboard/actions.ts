@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import type { ArtistType, ArtistOrigin, BiasCategory } from "@prisma/client";
+import type { ArtistType, ArtistOrigin } from "@prisma/client";
 import { upsertArtistFromSpotify, upsertSongFromSpotify } from "@/lib/catalog";
 import type { SpotifyArtistResult, SpotifyTrackResult } from "@/lib/spotify";
 
@@ -13,9 +13,10 @@ async function requireUserId(): Promise<string> {
   return session.user.id;
 }
 
-function revalidateAfterEdit(username?: string | null) {
-  revalidatePath("/dashboard");
-  if (username) revalidatePath(`/u/${username}`);
+async function revalidateAfterEdit(userId: string, extraPath?: string) {
+  if (extraPath) revalidatePath(extraPath);
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+  if (user) revalidatePath(`/u/${user.username}`);
 }
 
 // ---------- Favorite artists ----------
@@ -30,8 +31,7 @@ export async function addFavoriteArtist(spotifyArtist: SpotifyArtistResult) {
     update: {},
     create: { userId, artistId: artist.id, rank: count + 1 },
   });
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 export async function removeFavoriteArtist(artistId: string) {
@@ -48,8 +48,7 @@ export async function removeFavoriteArtist(artistId: string) {
       }),
     (row) => row.artistId
   );
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 export async function reorderFavoriteArtists(orderedArtistIds: string[]) {
@@ -62,8 +61,7 @@ export async function reorderFavoriteArtists(orderedArtistIds: string[]) {
       })
     )
   );
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 // ---------- Top songs ----------
@@ -78,8 +76,7 @@ export async function addTopSong(spotifyTrack: SpotifyTrackResult) {
     update: {},
     create: { userId, songId: song.id, rank: count + 1 },
   });
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
+  await revalidateAfterEdit(userId, "/dashboard/songs");
 }
 
 export async function removeTopSong(songId: string) {
@@ -94,8 +91,7 @@ export async function removeTopSong(songId: string) {
       }),
     (row) => row.songId
   );
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
+  await revalidateAfterEdit(userId, "/dashboard/songs");
 }
 
 export async function reorderTopSongs(orderedSongIds: string[]) {
@@ -108,53 +104,74 @@ export async function reorderTopSongs(orderedSongIds: string[]) {
       })
     )
   );
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
+  await revalidateAfterEdit(userId, "/dashboard/songs");
 }
 
-// ---------- Member rankings (per group, full reorder) ----------
+// ---------- Biases (tick per member: bias + at most one ult bias per group) ----------
 
-export async function setMemberRanking(groupId: string, orderedMemberIds: string[]) {
+export async function toggleBias(memberId: string, groupId: string, checked: boolean) {
   const userId = await requireUserId();
 
-  await prisma.$transaction([
-    prisma.userMemberRanking.deleteMany({ where: { userId, groupId } }),
-    ...orderedMemberIds.map((memberId, idx) =>
-      prisma.userMemberRanking.create({
-        data: { userId, groupId, memberId, rank: idx + 1 },
+  if (checked) {
+    await prisma.userBias.upsert({
+      where: { userId_memberId: { userId, memberId } },
+      update: {},
+      create: { userId, memberId, groupId },
+    });
+  } else {
+    // Removing the bias tick removes ult status too — an ult bias is a bias.
+    await prisma.userBias.deleteMany({ where: { userId, memberId } });
+    await reindexUltRanks(userId);
+  }
+  await revalidateAfterEdit(userId, "/dashboard/artists");
+}
+
+export async function toggleUltBias(memberId: string, groupId: string, checked: boolean) {
+  const userId = await requireUserId();
+
+  if (checked) {
+    await prisma.$transaction(async (tx) => {
+      // Only one ult bias per group: demote any other current ult in this group.
+      await tx.userBias.updateMany({
+        where: { userId, groupId, isUlt: true, memberId: { not: memberId } },
+        data: { isUlt: false, ultRank: null },
+      });
+
+      const ultCount = await tx.userBias.count({ where: { userId, isUlt: true } });
+      await tx.userBias.upsert({
+        where: { userId_memberId: { userId, memberId } },
+        update: { isUlt: true, ultRank: ultCount + 1 },
+        create: { userId, memberId, groupId, isUlt: true, ultRank: ultCount + 1 },
+      });
+    });
+    await reindexUltRanks(userId);
+  } else {
+    await prisma.userBias.updateMany({
+      where: { userId, memberId },
+      data: { isUlt: false, ultRank: null },
+    });
+    await reindexUltRanks(userId);
+  }
+  await revalidateAfterEdit(userId, "/dashboard/artists");
+}
+
+export async function reorderUltBiases(orderedMemberIds: string[]) {
+  const userId = await requireUserId();
+  await prisma.$transaction(
+    orderedMemberIds.map((memberId, idx) =>
+      prisma.userBias.update({
+        where: { userId_memberId: { userId, memberId } },
+        data: { ultRank: idx + 1 },
       })
-    ),
-  ]);
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
-}
-
-// ---------- Biases ----------
-
-export async function setBias(groupId: string, category: BiasCategory, memberId: string) {
-  const userId = await requireUserId();
-  await prisma.userBias.upsert({
-    where: { userId_groupId_category: { userId, groupId, category } },
-    update: { memberId },
-    create: { userId, groupId, category, memberId },
-  });
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
-}
-
-export async function removeBias(groupId: string, category: BiasCategory) {
-  const userId = await requireUserId();
-  await prisma.userBias.delete({
-    where: { userId_groupId_category: { userId, groupId, category } },
-  });
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  revalidateAfterEdit(user?.username);
+    )
+  );
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 // ---------- Group members (manual fallback for gaps in MusicBrainz) ----------
 
 export async function addGroupMember(groupId: string, name: string, imageUrl?: string) {
-  await requireUserId();
+  const userId = await requireUserId();
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Member name is required");
 
@@ -166,11 +183,11 @@ export async function addGroupMember(groupId: string, name: string, imageUrl?: s
       source: "MANUAL",
     },
   });
-  revalidatePath("/dashboard");
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 export async function updateGroupMember(memberId: string, name: string, imageUrl?: string) {
-  await requireUserId();
+  const userId = await requireUserId();
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Member name is required");
 
@@ -178,27 +195,28 @@ export async function updateGroupMember(memberId: string, name: string, imageUrl
     where: { id: memberId },
     data: { name: trimmed, imageUrl: imageUrl?.trim() || null },
   });
-  revalidatePath("/dashboard");
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 export async function removeGroupMember(memberId: string) {
-  await requireUserId();
+  const userId = await requireUserId();
   await prisma.groupMember.delete({ where: { id: memberId } });
-  revalidatePath("/dashboard");
+  await reindexUltRanks(userId);
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 // ---------- Artist metadata overrides (auto-detection isn't perfect) ----------
 
 export async function setArtistType(artistId: string, type: ArtistType) {
-  await requireUserId();
+  const userId = await requireUserId();
   await prisma.artist.update({ where: { id: artistId }, data: { type } });
-  revalidatePath("/dashboard");
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 export async function setArtistOrigin(artistId: string, origin: ArtistOrigin) {
-  await requireUserId();
+  const userId = await requireUserId();
   await prisma.artist.update({ where: { id: artistId }, data: { origin } });
-  revalidatePath("/dashboard");
+  await revalidateAfterEdit(userId, "/dashboard/artists");
 }
 
 // ---------- helpers ----------
@@ -210,4 +228,22 @@ async function reindexRanks<T>(
 ) {
   const rows = await fetchRows();
   await Promise.all(rows.map((row, idx) => update(getId(row), idx + 1)));
+}
+
+/** Close any gaps left in a user's ult-bias ranking after a removal. */
+async function reindexUltRanks(userId: string) {
+  const rows = await prisma.userBias.findMany({
+    where: { userId, isUlt: true },
+    orderBy: { ultRank: "asc" },
+  });
+  await Promise.all(
+    rows.map((row, idx) =>
+      row.ultRank === idx + 1
+        ? Promise.resolve()
+        : prisma.userBias.update({
+            where: { userId_memberId: { userId, memberId: row.memberId } },
+            data: { ultRank: idx + 1 },
+          })
+    )
+  );
 }

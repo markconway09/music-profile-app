@@ -1,174 +1,37 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
-import { FavoriteArtistsEditor } from "@/components/dashboard/FavoriteArtistsEditor";
-import { TopSongsEditor } from "@/components/dashboard/TopSongsEditor";
-import { MemberRankingEditor } from "@/components/dashboard/MemberRankingEditor";
-import { BiasEditor } from "@/components/dashboard/BiasEditor";
-import { MemberManager } from "@/components/dashboard/MemberManager";
-import { ArtistMetaEditor } from "@/components/dashboard/ArtistMetaEditor";
-import type { BiasCategory } from "@prisma/client";
 
-export default async function DashboardPage() {
+export default async function DashboardHubPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
-  const userId = session.user.id;
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      favoriteArtists: { include: { artist: { include: { members: true } } }, orderBy: { rank: "asc" } },
-      topSongs: { include: { song: { include: { artist: true } } }, orderBy: { rank: "asc" } },
-      memberRankings: { include: { member: true }, orderBy: [{ groupId: "asc" }, { rank: "asc" }] },
-      biases: true,
-    },
-  });
-
-  if (!user) redirect("/login");
-
-  const favoritedGroups = user.favoriteArtists
-    .map((fa) => fa.artist)
-    .filter((a) => a.type === "GROUP");
-
-  const rankingsByGroup = new Map<string, { memberId: string; rank: number }[]>();
-  for (const r of user.memberRankings) {
-    const list = rankingsByGroup.get(r.groupId) ?? [];
-    list.push({ memberId: r.memberId, rank: r.rank });
-    rankingsByGroup.set(r.groupId, list);
-  }
-
-  const biasesByGroup = new Map<string, Partial<Record<BiasCategory, string>>>();
-  for (const b of user.biases) {
-    const rec = biasesByGroup.get(b.groupId) ?? {};
-    rec[b.category] = b.memberId;
-    biasesByGroup.set(b.groupId, rec);
-  }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
-      <header className="mb-10">
-        <h1 className="text-2xl font-semibold">Editor</h1>
-        <p className="text-sm text-black/60 dark:text-white/60">
-          Logged in as @{user.username}. Search Spotify to add artists and songs — drag to
-          reorder, changes save automatically.
-        </p>
-      </header>
-
-      <Section title="Favorite Artists">
-        <FavoriteArtistsEditor
-          favorites={user.favoriteArtists.map((fa) => ({
-            id: fa.artistId,
-            label: fa.artist.name,
-            imageUrl: fa.artist.imageUrl,
-          }))}
-        />
-        <ArtistMetaEditor
-          artists={user.favoriteArtists.map((fa) => ({
-            id: fa.artist.id,
-            name: fa.artist.name,
-            type: fa.artist.type,
-            origin: fa.artist.origin,
-          }))}
-        />
-      </Section>
-
-      <Section title="Top Songs">
-        <TopSongsEditor
-          topSongs={user.topSongs.map((ts) => ({
-            id: ts.songId,
-            label: ts.song.title,
-            sublabel: ts.song.artist.name,
-            imageUrl: ts.song.imageUrl,
-          }))}
-        />
-      </Section>
-
-      <Section title="Member Rankings">
-        {favoritedGroups.length === 0 ? (
-          <p className="text-sm text-black/40 dark:text-white/40">
-            Add a group to your favorite artists to rank its members.
+    <div className="mx-auto max-w-2xl px-4 py-16 sm:px-8">
+      <h1 className="mb-2 text-2xl font-semibold">Editor</h1>
+      <p className="mb-10 text-sm text-black/60 dark:text-white/60">
+        What do you want to edit?
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Link
+          href="/dashboard/artists"
+          className="rounded-xl border border-black/10 p-6 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+        >
+          <h2 className="text-lg font-medium">Favorite Artists</h2>
+          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+            Search and rank artists, tick biases and ult biases, manage group members.
           </p>
-        ) : (
-          <div className="flex flex-col gap-8">
-            {favoritedGroups.map((group) => {
-              const existing = rankingsByGroup.get(group.id) ?? [];
-              const rankedIds = existing
-                .slice()
-                .sort((a, b) => a.rank - b.rank)
-                .map((r) => r.memberId);
-              const unrankedMembers = group.members.filter((m) => !rankedIds.includes(m.id));
-              const orderedMembers = [
-                ...rankedIds
-                  .map((id) => group.members.find((m) => m.id === id))
-                  .filter((m): m is (typeof group.members)[number] => Boolean(m)),
-                ...unrankedMembers,
-              ];
-
-              return (
-                <div key={group.id}>
-                  <h3 className="mb-2 text-sm font-medium text-black/70 dark:text-white/70">
-                    {group.name}
-                  </h3>
-                  {group.members.length === 0 ? (
-                    <p className="text-sm text-black/40 dark:text-white/40">
-                      No members found yet — add them manually below.
-                    </p>
-                  ) : (
-                    <MemberRankingEditor
-                      groupId={group.id}
-                      members={orderedMembers.map((m) => ({
-                        id: m.id,
-                        label: m.name,
-                        imageUrl: m.imageUrl,
-                      }))}
-                    />
-                  )}
-                  <MemberManager
-                    groupId={group.id}
-                    members={group.members.map((m) => ({
-                      id: m.id,
-                      name: m.name,
-                      imageUrl: m.imageUrl,
-                    }))}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-
-      <Section title="Biases">
-        {favoritedGroups.length === 0 ? (
-          <p className="text-sm text-black/40 dark:text-white/40">
-            Add a group to your favorite artists to pick a bias.
+        </Link>
+        <Link
+          href="/dashboard/songs"
+          className="rounded-xl border border-black/10 p-6 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+        >
+          <h2 className="text-lg font-medium">Favorite Songs</h2>
+          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+            Search and rank your top songs.
           </p>
-        ) : (
-          <div className="flex flex-col gap-8">
-            {favoritedGroups.map((group) => (
-              <div key={group.id}>
-                <h3 className="mb-2 text-sm font-medium text-black/70 dark:text-white/70">
-                  {group.name}
-                </h3>
-                <BiasEditor
-                  groupId={group.id}
-                  members={group.members.map((m) => ({ id: m.id, name: m.name }))}
-                  biases={biasesByGroup.get(group.id) ?? {}}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+        </Link>
+      </div>
     </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="mb-10">
-      <h2 className="mb-3 text-lg font-semibold">{title}</h2>
-      {children}
-    </section>
   );
 }
