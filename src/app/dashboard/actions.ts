@@ -236,14 +236,15 @@ async function reindexUltRanks(userId: string) {
     where: { userId, isUlt: true },
     orderBy: { ultRank: "asc" },
   });
-  await Promise.all(
+  const stale = rows.filter((row, idx) => row.ultRank !== idx + 1);
+  if (stale.length === 0) return;
+
+  await prisma.$transaction(
     rows.map((row, idx) =>
-      row.ultRank === idx + 1
-        ? Promise.resolve()
-        : prisma.userBias.update({
-            where: { userId_memberId: { userId, memberId: row.memberId } },
-            data: { ultRank: idx + 1 },
-          })
+      prisma.userBias.update({
+        where: { userId_memberId: { userId, memberId: row.memberId } },
+        data: { ultRank: idx + 1 },
+      })
     )
   );
 }

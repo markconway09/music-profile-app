@@ -102,7 +102,6 @@ model UserFavoriteArtist {
   artist Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
 
   @@id([userId, artistId])
-  @@unique([userId, rank])
 }
 
 model UserTopSong {
@@ -114,7 +113,6 @@ model UserTopSong {
   song Song @relation(fields: [songId], references: [id], onDelete: Cascade)
 
   @@id([userId, songId])
-  @@unique([userId, rank])
 }
 
 // A member the user has ticked as a "bias" for that group. `isUlt` marks
@@ -133,5 +131,4 @@ model UserBias {
   group  Artist      @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@id([userId, memberId])
-  @@unique([userId, ultRank])
 }
