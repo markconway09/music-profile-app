@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import type { ArtistType, ArtistOrigin } from "@prisma/client";
 import { upsertArtistFromSpotify, upsertSongFromSpotify } from "@/lib/catalog";
@@ -9,12 +8,7 @@ import type { SpotifyArtistResult, SpotifyTrackResult } from "@/lib/spotify";
 import { getMemberEnrichmentSource, pickLatinAlias } from "@/lib/musicbrainz";
 import { getWikidataImageAndLabel } from "@/lib/wikidata";
 import { algorithmicRomanize, needsRomanization, isLatinText } from "@/lib/romanize";
-
-async function requireUserId(): Promise<string> {
-  const session = await auth();
-  if (!session?.user?.id) throw new Error("Unauthorized");
-  return session.user.id;
-}
+import { requireUserId } from "@/lib/require-user";
 
 async function revalidateAfterEdit(userId: string, extraPath?: string) {
   if (extraPath) revalidatePath(extraPath);

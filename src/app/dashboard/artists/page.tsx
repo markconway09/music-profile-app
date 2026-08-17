@@ -47,7 +47,7 @@ export default async function ArtistsPage() {
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
       <header className="mb-10">
         <Link href="/dashboard" className="text-sm text-black/50 hover:underline dark:text-white/50">
-          ← Editor
+          ← Dashboard
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Favorite Artists</h1>
         <p className="text-sm text-black/60 dark:text-white/60">

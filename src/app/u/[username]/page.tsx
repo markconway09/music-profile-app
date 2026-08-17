@@ -22,9 +22,18 @@ export default async function ProfilePage({
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-8">
       <header className="mb-10 flex items-center gap-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/5 text-2xl font-semibold dark:bg-white/10">
-          {user.username.slice(0, 1).toUpperCase()}
-        </div>
+        {user.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={user.image}
+            alt=""
+            className="h-16 w-16 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-black/5 text-2xl font-semibold dark:bg-white/10">
+            {user.username.slice(0, 1).toUpperCase()}
+          </div>
+        )}
         <div>
           <h1 className="text-2xl font-semibold">@{user.username}</h1>
           <p className="text-sm text-black/60 dark:text-white/60">

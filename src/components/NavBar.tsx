@@ -14,6 +14,18 @@ export function NavBar() {
       <nav className="flex items-center gap-4 text-sm">
         {status === "loading" ? null : session?.user ? (
           <>
+            {session.user.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={session.user.image}
+                alt=""
+                className="h-7 w-7 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/5 text-xs font-semibold dark:bg-white/10">
+                {session.user.name?.slice(0, 1).toUpperCase()}
+              </span>
+            )}
             <Link href={`/u/${session.user.name}`} className="hover:underline">
               My profile
             </Link>
