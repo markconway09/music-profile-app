@@ -8,10 +8,11 @@ import type { SpotifyArtistResult, SpotifyTrackResult } from "@/lib/spotify";
 import {
   classifyArtist,
   getCurrentMembers,
+  getGroupWikidataQid,
   getMemberEnrichmentSource,
   pickLatinAlias,
 } from "@/lib/musicbrainz";
-import { getWikidataImageAndLabel } from "@/lib/wikidata";
+import { getWikidataImageAndLabel, searchWikidataMemberMatch } from "@/lib/wikidata";
 import { algorithmicRomanize, needsRomanization, isLatinText } from "@/lib/romanize";
 import { requireUserId } from "@/lib/require-user";
 
@@ -261,6 +262,18 @@ export async function enrichGroupMembers(
     }
   }
 
+  // Fetched at most once per enrichment run, and only if a member actually
+  // needs it — this is the group's *own* Wikidata item, used to confirm
+  // name-search matches below (not to be confused with a member's own
+  // wikidataQid, which comes from their individual MusicBrainz page).
+  let groupWikidataQid: string | null | undefined;
+  async function getCachedGroupWikidataQid(): Promise<string | null> {
+    if (groupWikidataQid === undefined) {
+      groupWikidataQid = groupMbId ? await getGroupWikidataQid(groupMbId) : null;
+    }
+    return groupWikidataQid;
+  }
+
   let checked = 0;
   let updated = 0;
   for (const member of members) {
@@ -290,6 +303,25 @@ export async function enrichGroupMembers(
       if (needsImage) newImage = wd.imageUrl;
       if (needsName && !newName && wd.enLabel && isLatinText(wd.enLabel)) {
         newName = wd.enLabel;
+      }
+    }
+
+    // Last resort before giving up: the member's own MusicBrainz page had
+    // no Wikidata link at all (common for newer/less-mainstream idols
+    // MusicBrainz hasn't fully cross-referenced yet), but Wikidata may
+    // still have a matching entry findable by name — confirmed via a
+    // "member of"/"part of" claim pointing at the group's own Wikidata
+    // item, so a same-name stranger can't get attached by mistake.
+    if ((needsImage && !newImage) || (needsName && !newName)) {
+      const gwq = await getCachedGroupWikidataQid();
+      if (gwq) {
+        const match = await searchWikidataMemberMatch(member.name, gwq);
+        if (match) {
+          if (needsImage && !newImage) newImage = match.imageUrl;
+          if (needsName && !newName && match.enLabel && isLatinText(match.enLabel)) {
+            newName = match.enLabel;
+          }
+        }
       }
     }
 

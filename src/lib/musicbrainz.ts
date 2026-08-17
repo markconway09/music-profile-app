@@ -141,6 +141,21 @@ export async function classifyArtist(
   }
 }
 
+/** Fetch a group's own Wikidata QID via its MusicBrainz url-relations, if
+ *  MusicBrainz has one on record. */
+export async function getGroupWikidataQid(musicbrainzId: string): Promise<string | null> {
+  try {
+    const detail = await mbFetch<MbArtistDetail>(`/artist/${musicbrainzId}?inc=url-rels&fmt=json`);
+    const wikidataRel = detail.relations.find(
+      (rel): rel is MbUrlRelation =>
+        rel["target-type"] === "url" && rel.url.resource.includes("wikidata.org/wiki/")
+    );
+    return wikidataRel ? (wikidataRel.url.resource.split("/").pop() ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Fetch current (non-former) members of a group by MusicBrainz ID. */
 export async function getCurrentMembers(musicbrainzId: string): Promise<MusicBrainzMember[]> {
   try {
