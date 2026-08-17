@@ -6,6 +6,7 @@ import { FavoriteArtistsEditor } from "@/components/dashboard/FavoriteArtistsEdi
 import { ArtistMetaEditor } from "@/components/dashboard/ArtistMetaEditor";
 import { MemberBiasTicker } from "@/components/dashboard/MemberBiasTicker";
 import { MemberManager } from "@/components/dashboard/MemberManager";
+import { EnrichMembersButton } from "@/components/dashboard/EnrichMembersButton";
 import { CollapsibleGroup } from "@/components/dashboard/CollapsibleGroup";
 import { UltBiasRankingEditor } from "@/components/dashboard/UltBiasRankingEditor";
 
@@ -92,6 +93,9 @@ export default async function ArtistsPage() {
               });
               const biasCount = groupMembers.filter((m) => m.isBias).length;
               const ult = groupMembers.find((m) => m.isUlt);
+              const hasEnrichableMembers = group.members.some(
+                (m) => m.musicbrainzId && !m.enrichAttemptedAt
+              );
 
               return (
                 <CollapsibleGroup
@@ -112,6 +116,7 @@ export default async function ArtistsPage() {
                       imageUrl: m.imageUrl,
                     }))}
                   />
+                  {hasEnrichableMembers && <EnrichMembersButton groupId={group.id} />}
                 </CollapsibleGroup>
               );
             })}

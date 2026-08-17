@@ -38,18 +38,20 @@ export function SortableList({
   const [localItems, setLocalItems] = useState(items);
   const [isPending, startTransition] = useTransition();
 
-  // Re-sync from server-provided props when the set of items changes
-  // (e.g. an add/remove elsewhere triggered a server component refresh).
+  // Re-sync from server-provided props when anything about the items
+  // changes — not just which ids are present, but also each item's own
+  // label/sublabel/imageUrl (e.g. a member got renamed by the romanization
+  // enrichment tool elsewhere on the page, with the same id set as before).
   // Adjusting state during render (rather than in an effect) avoids an
   // extra render pass — see https://react.dev/learn/you-might-not-need-an-effect
-  const itemIdsKey = items
-    .map((i) => i.id)
+  const itemsKey = items
+    .map((i) => `${i.id}:${i.label}:${i.sublabel ?? ""}:${i.imageUrl ?? ""}`)
     .slice()
     .sort()
-    .join(",");
-  const [syncedKey, setSyncedKey] = useState(itemIdsKey);
-  if (itemIdsKey !== syncedKey) {
-    setSyncedKey(itemIdsKey);
+    .join("|");
+  const [syncedKey, setSyncedKey] = useState(itemsKey);
+  if (itemsKey !== syncedKey) {
+    setSyncedKey(itemsKey);
     setLocalItems(items);
   }
 

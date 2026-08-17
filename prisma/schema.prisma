@@ -78,13 +78,17 @@ enum MemberSource {
 }
 
 model GroupMember {
-  id            String       @id @default(cuid())
-  name          String
-  artistId      String
-  imageUrl      String?
-  musicbrainzId String?      @unique
-  source        MemberSource @default(MANUAL)
-  artist        Artist       @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  id                String       @id @default(cuid())
+  name              String
+  artistId          String
+  imageUrl          String?
+  musicbrainzId     String?      @unique
+  source            MemberSource @default(MANUAL)
+  // Set once a romanization/photo enrichment pass has run (successfully or
+  // not) or the user has manually edited this member, so we don't keep
+  // re-querying MusicBrainz/Wikidata for it or clobber a manual fix.
+  enrichAttemptedAt DateTime?
+  artist            Artist       @relation(fields: [artistId], references: [id], onDelete: Cascade)
 
   biasedBy UserBias[]
 

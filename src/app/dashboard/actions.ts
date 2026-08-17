@@ -6,6 +6,9 @@ import { prisma } from "@/lib/prisma";
 import type { ArtistType, ArtistOrigin } from "@prisma/client";
 import { upsertArtistFromSpotify, upsertSongFromSpotify } from "@/lib/catalog";
 import type { SpotifyArtistResult, SpotifyTrackResult } from "@/lib/spotify";
+import { getMemberEnrichmentSource, pickLatinAlias } from "@/lib/musicbrainz";
+import { getWikidataImageAndLabel } from "@/lib/wikidata";
+import { algorithmicRomanize, needsRomanization, isLatinText } from "@/lib/romanize";
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -193,7 +196,9 @@ export async function updateGroupMember(memberId: string, name: string, imageUrl
 
   await prisma.groupMember.update({
     where: { id: memberId },
-    data: { name: trimmed, imageUrl: imageUrl?.trim() || null },
+    // A manual edit is the user's final say — stamp enrichAttemptedAt so a
+    // later enrichment pass doesn't come along and overwrite it.
+    data: { name: trimmed, imageUrl: imageUrl?.trim() || null, enrichAttemptedAt: new Date() },
   });
   await revalidateAfterEdit(userId, "/dashboard/artists");
 }
@@ -203,6 +208,58 @@ export async function removeGroupMember(memberId: string) {
   await prisma.groupMember.delete({ where: { id: memberId } });
   await reindexUltRanks(userId);
   await revalidateAfterEdit(userId, "/dashboard/artists");
+}
+
+// ---------- Member enrichment (romanize names, fetch photos) ----------
+
+export async function enrichGroupMembers(
+  groupId: string
+): Promise<{ checked: number; updated: number }> {
+  const userId = await requireUserId();
+
+  const members = await prisma.groupMember.findMany({
+    where: { artistId: groupId, musicbrainzId: { not: null }, enrichAttemptedAt: null },
+  });
+
+  let updated = 0;
+  for (const member of members) {
+    const needsName = needsRomanization(member.name);
+    const needsImage = !member.imageUrl;
+
+    let newName: string | null = needsName ? algorithmicRomanize(member.name) : null;
+    let newImage: string | null = null;
+
+    // Only hit MusicBrainz (and possibly Wikidata) if algorithmic
+    // romanization couldn't fully resolve the name, or a photo is missing.
+    if ((needsName && !newName) || needsImage) {
+      const source = await getMemberEnrichmentSource(member.musicbrainzId!);
+      if (source) {
+        if (needsName && !newName) {
+          newName = pickLatinAlias(source.aliases);
+        }
+        if (needsImage && source.wikidataQid) {
+          const wd = await getWikidataImageAndLabel(source.wikidataQid);
+          newImage = wd.imageUrl;
+          if (needsName && !newName && wd.enLabel && isLatinText(wd.enLabel)) {
+            newName = wd.enLabel;
+          }
+        }
+      }
+    }
+
+    await prisma.groupMember.update({
+      where: { id: member.id },
+      data: {
+        ...(newName ? { name: newName } : {}),
+        ...(newImage ? { imageUrl: newImage } : {}),
+        enrichAttemptedAt: new Date(),
+      },
+    });
+    if (newName || newImage) updated++;
+  }
+
+  await revalidateAfterEdit(userId, "/dashboard/artists");
+  return { checked: members.length, updated };
 }
 
 // ---------- Artist metadata overrides (auto-detection isn't perfect) ----------

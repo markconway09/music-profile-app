@@ -52,11 +52,18 @@ interface MbArtistRelation {
   artist: { id: string; name: string; type?: string };
 }
 
+interface MbAlias {
+  name: string;
+  locale: string | null;
+  primary: boolean | null;
+}
+
 interface MbArtistDetail {
   id: string;
   name: string;
   type?: string;
   relations: (MbUrlRelation | MbArtistRelation)[];
+  aliases?: MbAlias[];
 }
 
 export type ArtistClassification = {
@@ -123,4 +130,48 @@ export async function getCurrentMembers(musicbrainzId: string): Promise<MusicBra
   } catch {
     return [];
   }
+}
+
+export type MemberEnrichmentSource = {
+  aliases: { name: string; locale: string | null; primary: boolean | null }[];
+  wikidataQid: string | null;
+};
+
+/**
+ * One combined lookup (aliases + external links) for a single member's own
+ * MusicBrainz page, used by the name-romanization / photo enrichment flow.
+ */
+export async function getMemberEnrichmentSource(
+  musicbrainzId: string
+): Promise<MemberEnrichmentSource | null> {
+  try {
+    const detail = await mbFetch<MbArtistDetail>(
+      `/artist/${musicbrainzId}?inc=aliases+url-rels&fmt=json`
+    );
+    const wikidataRel = detail.relations.find(
+      (rel): rel is MbUrlRelation =>
+        rel["target-type"] === "url" && rel.url.resource.includes("wikidata.org/wiki/")
+    );
+    const wikidataQid = wikidataRel ? (wikidataRel.url.resource.split("/").pop() ?? null) : null;
+
+    return { aliases: detail.aliases ?? [], wikidataQid };
+  } catch {
+    return null;
+  }
+}
+
+const LATIN_ALIAS_RE = /^[A-Za-z0-9\s\-'.]+$/;
+
+/** Picks the best Latin-script name from a MusicBrainz alias list, if any. */
+export function pickLatinAlias(aliases: MemberEnrichmentSource["aliases"]): string | null {
+  const primaryEn = aliases.find(
+    (a) => a.primary && a.locale?.startsWith("en") && LATIN_ALIAS_RE.test(a.name)
+  );
+  if (primaryEn) return primaryEn.name;
+
+  const anyEn = aliases.find((a) => a.locale?.startsWith("en") && LATIN_ALIAS_RE.test(a.name));
+  if (anyEn) return anyEn.name;
+
+  const anyLatin = aliases.find((a) => LATIN_ALIAS_RE.test(a.name));
+  return anyLatin?.name ?? null;
 }
