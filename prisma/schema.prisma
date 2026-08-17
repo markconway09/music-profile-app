@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth / core ----------
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  email         String    @unique
+  passwordHash  String
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  favoriteArtists UserFavoriteArtist[]
+  topSongs        UserTopSong[]
+  memberRankings  UserMemberRanking[]
+  biases          UserBias[]
+}
+
+// ---------- Catalog ----------
+
+enum ArtistType {
+  SOLO
+  GROUP
+}
+
+enum ArtistOrigin {
+  KPOP
+  JPOP
+  OTHER
+}
+
+model Artist {
+  id       String       @id @default(cuid())
+  name     String
+  type     ArtistType
+  origin   ArtistOrigin
+  imageUrl String?
+
+  songs   Song[]
+  members GroupMember[]
+
+  favoritedBy     UserFavoriteArtist[]
+  memberRankings  UserMemberRanking[]
+  biases          UserBias[]
+
+  @@index([name])
+}
+
+model Song {
+  id       String @id @default(cuid())
+  title    String
+  artistId String
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  topByUsers UserTopSong[]
+
+  @@index([artistId])
+}
+
+model GroupMember {
+  id       String @id @default(cuid())
+  name     String
+  artistId String
+  imageUrl String?
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  rankedBy UserMemberRanking[]
+  biasedBy UserBias[]
+
+  @@index([artistId])
+}
+
+// ---------- User-curated lists ----------
+
+model UserFavoriteArtist {
+  userId   String
+  artistId String
+  rank     Int
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  artist Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@id([userId, artistId])
+  @@unique([userId, rank])
+}
+
+model UserTopSong {
+  userId String
+  songId String
+  rank   Int
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  song Song @relation(fields: [songId], references: [id], onDelete: Cascade)
+
+  @@id([userId, songId])
+  @@unique([userId, rank])
+}
+
+model UserMemberRanking {
+  userId   String
+  groupId  String
+  memberId String
+  rank     Int
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group  Artist       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  member GroupMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId, memberId])
+  @@unique([userId, groupId, rank])
+}
+
+enum BiasCategory {
+  VOCAL
+  DANCE
+  VISUAL
+  RAP
+  OVERALL
+}
+
+model UserBias {
+  userId   String
+  groupId  String
+  memberId String
+  category BiasCategory
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group  Artist       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  member GroupMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId, category])
+}
