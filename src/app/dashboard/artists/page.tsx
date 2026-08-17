@@ -27,9 +27,20 @@ export default async function ArtistsPage() {
   });
   if (!user) redirect("/login");
 
-  const favoritedGroups = user.favoriteArtists
+  const allFavoritedGroups = user.favoriteArtists
     .map((fa) => fa.artist)
     .filter((a) => a.type === "GROUP");
+
+  // Biases only make sense to tick for K-pop/J-pop groups — that's the
+  // whole point of the origin field. A group that already has bias data
+  // (e.g. from before its origin was corrected) stays visible so nothing
+  // already set becomes unmanageable; fixing a misclassified origin above
+  // is what brings a group back into this list.
+  const groupIdsWithExistingBiases = new Set(user.biases.map((b) => b.groupId));
+  const favoritedGroups = allFavoritedGroups.filter(
+    (a) => a.origin === "KPOP" || a.origin === "JPOP" || groupIdsWithExistingBiases.has(a.id)
+  );
+  const excludedGroupCount = allFavoritedGroups.length - favoritedGroups.length;
 
   const biasByMemberId = new Map(user.biases.map((b) => [b.memberId, b]));
 
@@ -76,7 +87,9 @@ export default async function ArtistsPage() {
       <Section title="Biases">
         {favoritedGroups.length === 0 ? (
           <p className="text-sm text-black/40 dark:text-white/40">
-            Add a group to your favorite artists to tick biases.
+            {allFavoritedGroups.length === 0
+              ? "Add a group to your favorite artists to tick biases."
+              : "Biases are only available for K-pop and J-pop groups — fix a group's origin above if it's misclassified."}
           </p>
         ) : (
           <div className="flex flex-col gap-3">
@@ -120,6 +133,13 @@ export default async function ArtistsPage() {
                 </CollapsibleGroup>
               );
             })}
+            {excludedGroupCount > 0 && (
+              <p className="text-xs text-black/40 dark:text-white/40">
+                {excludedGroupCount} group{excludedGroupCount === 1 ? "" : "s"} hidden — biases are
+                only available for K-pop and J-pop groups. Fix a group&apos;s origin above if it&apos;s
+                misclassified.
+              </p>
+            )}
           </div>
         )}
       </Section>
