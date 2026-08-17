@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mb-10">
+    <section>
       <h2 className="mb-3 text-lg font-semibold">{title}</h2>
       {children}
     </section>
