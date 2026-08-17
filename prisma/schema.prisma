@@ -78,17 +78,22 @@ enum MemberSource {
 }
 
 model GroupMember {
-  id                String       @id @default(cuid())
-  name              String
-  artistId          String
-  imageUrl          String?
-  musicbrainzId     String?      @unique
-  source            MemberSource @default(MANUAL)
-  // Set once a romanization/photo enrichment pass has run (successfully or
-  // not) or the user has manually edited this member, so we don't keep
-  // re-querying MusicBrainz/Wikidata for it or clobber a manual fix.
+  id            String       @id @default(cuid())
+  name          String
+  artistId      String
+  imageUrl      String?
+  musicbrainzId String?      @unique
+  source        MemberSource @default(MANUAL)
+  // Informational only — when enrichment last ran for this member. Doesn't
+  // gate future runs; the button always re-checks so a member that failed
+  // due to e.g. transient API flakiness (or a source getting new data
+  // since) isn't stuck that way forever.
   enrichAttemptedAt DateTime?
-  artist            Artist       @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  // Set when the user edits this member by hand, which *does* gate future
+  // enrichment — their manual fix is the final say, never silently
+  // overwritten by a later automated re-check.
+  manuallyEdited Boolean      @default(false)
+  artist         Artist       @relation(fields: [artistId], references: [id], onDelete: Cascade)
 
   biasedBy UserBias[]
 

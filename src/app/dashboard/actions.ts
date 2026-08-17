@@ -190,9 +190,9 @@ export async function updateGroupMember(memberId: string, name: string, imageUrl
 
   await prisma.groupMember.update({
     where: { id: memberId },
-    // A manual edit is the user's final say — stamp enrichAttemptedAt so a
-    // later enrichment pass doesn't come along and overwrite it.
-    data: { name: trimmed, imageUrl: imageUrl?.trim() || null, enrichAttemptedAt: new Date() },
+    // A manual edit is the user's final say — mark it so a later
+    // enrichment re-check doesn't come along and overwrite it.
+    data: { name: trimmed, imageUrl: imageUrl?.trim() || null, manuallyEdited: true },
   });
   await revalidateAfterEdit(userId, "/dashboard/artists");
 }
@@ -211,41 +211,46 @@ export async function enrichGroupMembers(
 ): Promise<{ checked: number; updated: number }> {
   const userId = await requireUserId();
 
+  // Always re-checks eligible members — including ones already attempted —
+  // so a member that failed last time (transient API flakiness, or a
+  // source that simply didn't have data yet) gets another shot. A manual
+  // edit is the only thing that opts a member out permanently.
   const members = await prisma.groupMember.findMany({
-    where: { artistId: groupId, musicbrainzId: { not: null }, enrichAttemptedAt: null },
+    where: { artistId: groupId, musicbrainzId: { not: null }, manuallyEdited: false },
   });
 
+  let checked = 0;
   let updated = 0;
   for (const member of members) {
     const needsName = needsRomanization(member.name);
     const needsImage = !member.imageUrl;
+    if (!needsName && !needsImage) continue; // already fully resolved, nothing to check
+    checked++;
 
     let newName: string | null = null;
     let newImage: string | null = null;
 
-    if (needsName || needsImage) {
-      // Priority for the name: MusicBrainz's own English alias (most
-      // authoritative — it's the actual official spelling), then Wikidata's
-      // English label, and only if neither has anything do we fall back to
-      // algorithmic romanization ("direct translation" from the characters,
-      // which can't know e.g. that 지젤 is styled "Giselle").
-      const source = await getMemberEnrichmentSource(member.musicbrainzId!);
+    // Priority for the name: MusicBrainz's own English alias (most
+    // authoritative — it's the actual official spelling), then Wikidata's
+    // English label, and only if neither has anything do we fall back to
+    // algorithmic romanization ("direct translation" from the characters,
+    // which can't know e.g. that 지젤 is styled "Giselle").
+    const source = await getMemberEnrichmentSource(member.musicbrainzId!);
 
-      if (needsName && source) {
-        newName = pickLatinAlias(source.aliases);
-      }
+    if (needsName && source) {
+      newName = pickLatinAlias(source.aliases);
+    }
 
-      if (source?.wikidataQid && (needsImage || (needsName && !newName))) {
-        const wd = await getWikidataImageAndLabel(source.wikidataQid);
-        if (needsImage) newImage = wd.imageUrl;
-        if (needsName && !newName && wd.enLabel && isLatinText(wd.enLabel)) {
-          newName = wd.enLabel;
-        }
+    if (source?.wikidataQid && (needsImage || (needsName && !newName))) {
+      const wd = await getWikidataImageAndLabel(source.wikidataQid);
+      if (needsImage) newImage = wd.imageUrl;
+      if (needsName && !newName && wd.enLabel && isLatinText(wd.enLabel)) {
+        newName = wd.enLabel;
       }
+    }
 
-      if (needsName && !newName) {
-        newName = algorithmicRomanize(member.name);
-      }
+    if (needsName && !newName) {
+      newName = algorithmicRomanize(member.name);
     }
 
     await prisma.groupMember.update({
@@ -260,7 +265,7 @@ export async function enrichGroupMembers(
   }
 
   await revalidateAfterEdit(userId, "/dashboard/artists");
-  return { checked: members.length, updated };
+  return { checked, updated };
 }
 
 // ---------- Artist metadata overrides (auto-detection isn't perfect) ----------
