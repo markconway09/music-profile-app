@@ -106,9 +106,6 @@ export default async function ArtistsPage() {
               });
               const biasCount = groupMembers.filter((m) => m.isBias).length;
               const ult = groupMembers.find((m) => m.isUlt);
-              const hasEnrichableMembers = group.members.some(
-                (m) => m.musicbrainzId && !m.enrichAttemptedAt
-              );
 
               return (
                 <CollapsibleGroup
@@ -129,7 +126,7 @@ export default async function ArtistsPage() {
                       imageUrl: m.imageUrl,
                     }))}
                   />
-                  {hasEnrichableMembers && <EnrichMembersButton groupId={group.id} />}
+                  <EnrichMembersButton groupId={group.id} />
                 </CollapsibleGroup>
               );
             })}
