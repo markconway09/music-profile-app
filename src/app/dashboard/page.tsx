@@ -5,6 +5,8 @@ import { FavoriteArtistsEditor } from "@/components/dashboard/FavoriteArtistsEdi
 import { TopSongsEditor } from "@/components/dashboard/TopSongsEditor";
 import { MemberRankingEditor } from "@/components/dashboard/MemberRankingEditor";
 import { BiasEditor } from "@/components/dashboard/BiasEditor";
+import { MemberManager } from "@/components/dashboard/MemberManager";
+import { ArtistMetaEditor } from "@/components/dashboard/ArtistMetaEditor";
 import type { BiasCategory } from "@prisma/client";
 
 export default async function DashboardPage() {
@@ -12,39 +14,21 @@ export default async function DashboardPage() {
   if (!session?.user?.id) redirect("/login");
   const userId = session.user.id;
 
-  const [user, allArtists, allSongs] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        favoriteArtists: { include: { artist: true }, orderBy: { rank: "asc" } },
-        topSongs: { include: { song: { include: { artist: true } } }, orderBy: { rank: "asc" } },
-        memberRankings: { include: { member: true }, orderBy: [{ groupId: "asc" }, { rank: "asc" }] },
-        biases: true,
-      },
-    }),
-    prisma.artist.findMany({
-      orderBy: { name: "asc" },
-      include: { members: true },
-    }),
-    prisma.song.findMany({ orderBy: { title: "asc" }, include: { artist: true } }),
-  ]);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      favoriteArtists: { include: { artist: { include: { members: true } } }, orderBy: { rank: "asc" } },
+      topSongs: { include: { song: { include: { artist: true } } }, orderBy: { rank: "asc" } },
+      memberRankings: { include: { member: true }, orderBy: [{ groupId: "asc" }, { rank: "asc" }] },
+      biases: true,
+    },
+  });
 
   if (!user) redirect("/login");
 
-  const favoriteArtistIds = new Set(user.favoriteArtists.map((fa) => fa.artistId));
-  const topSongIds = new Set(user.topSongs.map((ts) => ts.songId));
-
-  const availableArtists = allArtists
-    .filter((a) => !favoriteArtistIds.has(a.id))
-    .map((a) => ({ id: a.id, name: a.name }));
-
-  const availableSongs = allSongs
-    .filter((s) => !topSongIds.has(s.id))
-    .map((s) => ({ id: s.id, title: s.title, artistName: s.artist.name }));
-
-  const favoritedGroups = allArtists.filter(
-    (a) => a.type === "GROUP" && favoriteArtistIds.has(a.id)
-  );
+  const favoritedGroups = user.favoriteArtists
+    .map((fa) => fa.artist)
+    .filter((a) => a.type === "GROUP");
 
   const rankingsByGroup = new Map<string, { memberId: string; rank: number }[]>();
   for (const r of user.memberRankings) {
@@ -65,7 +49,8 @@ export default async function DashboardPage() {
       <header className="mb-10">
         <h1 className="text-2xl font-semibold">Editor</h1>
         <p className="text-sm text-black/60 dark:text-white/60">
-          Logged in as @{user.username}. Drag to reorder — changes save automatically.
+          Logged in as @{user.username}. Search Spotify to add artists and songs — drag to
+          reorder, changes save automatically.
         </p>
       </header>
 
@@ -74,8 +59,16 @@ export default async function DashboardPage() {
           favorites={user.favoriteArtists.map((fa) => ({
             id: fa.artistId,
             label: fa.artist.name,
+            imageUrl: fa.artist.imageUrl,
           }))}
-          availableArtists={availableArtists}
+        />
+        <ArtistMetaEditor
+          artists={user.favoriteArtists.map((fa) => ({
+            id: fa.artist.id,
+            name: fa.artist.name,
+            type: fa.artist.type,
+            origin: fa.artist.origin,
+          }))}
         />
       </Section>
 
@@ -85,8 +78,8 @@ export default async function DashboardPage() {
             id: ts.songId,
             label: ts.song.title,
             sublabel: ts.song.artist.name,
+            imageUrl: ts.song.imageUrl,
           }))}
-          availableSongs={availableSongs}
         />
       </Section>
 
@@ -116,9 +109,27 @@ export default async function DashboardPage() {
                   <h3 className="mb-2 text-sm font-medium text-black/70 dark:text-white/70">
                     {group.name}
                   </h3>
-                  <MemberRankingEditor
+                  {group.members.length === 0 ? (
+                    <p className="text-sm text-black/40 dark:text-white/40">
+                      No members found yet — add them manually below.
+                    </p>
+                  ) : (
+                    <MemberRankingEditor
+                      groupId={group.id}
+                      members={orderedMembers.map((m) => ({
+                        id: m.id,
+                        label: m.name,
+                        imageUrl: m.imageUrl,
+                      }))}
+                    />
+                  )}
+                  <MemberManager
                     groupId={group.id}
-                    members={orderedMembers.map((m) => ({ id: m.id, label: m.name }))}
+                    members={group.members.map((m) => ({
+                      id: m.id,
+                      name: m.name,
+                      imageUrl: m.imageUrl,
+                    }))}
                   />
                 </div>
               );

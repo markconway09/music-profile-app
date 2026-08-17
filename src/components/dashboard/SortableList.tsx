@@ -23,6 +23,7 @@ export type SortableItem = {
   id: string;
   label: string;
   sublabel?: string;
+  imageUrl?: string | null;
 };
 
 export function SortableList({
@@ -150,6 +151,18 @@ function SortableRow({
       <span className="w-6 shrink-0 text-right text-sm font-semibold text-black/40 dark:text-white/40">
         {rank}
       </span>
+      {item.imageUrl ? (
+        // Arbitrary external hosts (Spotify CDN, user-pasted URLs) rule out
+        // next/image's static remotePatterns allowlist, so a plain <img> it is.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.imageUrl}
+          alt=""
+          className="h-8 w-8 shrink-0 rounded object-cover"
+        />
+      ) : (
+        <span className="h-8 w-8 shrink-0 rounded bg-black/10 dark:bg-white/10" />
+      )}
       <span className="flex-1">
         {item.label}
         {item.sublabel && (

@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import type { BiasCategory } from "@prisma/client";
+import type { ArtistType, ArtistOrigin, BiasCategory } from "@prisma/client";
+import { upsertArtistFromSpotify, upsertSongFromSpotify } from "@/lib/catalog";
+import type { SpotifyArtistResult, SpotifyTrackResult } from "@/lib/spotify";
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -18,11 +20,15 @@ function revalidateAfterEdit(username?: string | null) {
 
 // ---------- Favorite artists ----------
 
-export async function addFavoriteArtist(artistId: string) {
+export async function addFavoriteArtist(spotifyArtist: SpotifyArtistResult) {
   const userId = await requireUserId();
+  const artist = await upsertArtistFromSpotify(spotifyArtist);
+
   const count = await prisma.userFavoriteArtist.count({ where: { userId } });
-  await prisma.userFavoriteArtist.create({
-    data: { userId, artistId, rank: count + 1 },
+  await prisma.userFavoriteArtist.upsert({
+    where: { userId_artistId: { userId, artistId: artist.id } },
+    update: {},
+    create: { userId, artistId: artist.id, rank: count + 1 },
   });
   const user = await prisma.user.findUnique({ where: { id: userId } });
   revalidateAfterEdit(user?.username);
@@ -62,10 +68,16 @@ export async function reorderFavoriteArtists(orderedArtistIds: string[]) {
 
 // ---------- Top songs ----------
 
-export async function addTopSong(songId: string) {
+export async function addTopSong(spotifyTrack: SpotifyTrackResult) {
   const userId = await requireUserId();
+  const song = await upsertSongFromSpotify(spotifyTrack);
+
   const count = await prisma.userTopSong.count({ where: { userId } });
-  await prisma.userTopSong.create({ data: { userId, songId, rank: count + 1 } });
+  await prisma.userTopSong.upsert({
+    where: { userId_songId: { userId, songId: song.id } },
+    update: {},
+    create: { userId, songId: song.id, rank: count + 1 },
+  });
   const user = await prisma.user.findUnique({ where: { id: userId } });
   revalidateAfterEdit(user?.username);
 }
@@ -137,6 +149,56 @@ export async function removeBias(groupId: string, category: BiasCategory) {
   });
   const user = await prisma.user.findUnique({ where: { id: userId } });
   revalidateAfterEdit(user?.username);
+}
+
+// ---------- Group members (manual fallback for gaps in MusicBrainz) ----------
+
+export async function addGroupMember(groupId: string, name: string, imageUrl?: string) {
+  await requireUserId();
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Member name is required");
+
+  await prisma.groupMember.create({
+    data: {
+      artistId: groupId,
+      name: trimmed,
+      imageUrl: imageUrl?.trim() || null,
+      source: "MANUAL",
+    },
+  });
+  revalidatePath("/dashboard");
+}
+
+export async function updateGroupMember(memberId: string, name: string, imageUrl?: string) {
+  await requireUserId();
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Member name is required");
+
+  await prisma.groupMember.update({
+    where: { id: memberId },
+    data: { name: trimmed, imageUrl: imageUrl?.trim() || null },
+  });
+  revalidatePath("/dashboard");
+}
+
+export async function removeGroupMember(memberId: string) {
+  await requireUserId();
+  await prisma.groupMember.delete({ where: { id: memberId } });
+  revalidatePath("/dashboard");
+}
+
+// ---------- Artist metadata overrides (auto-detection isn't perfect) ----------
+
+export async function setArtistType(artistId: string, type: ArtistType) {
+  await requireUserId();
+  await prisma.artist.update({ where: { id: artistId }, data: { type } });
+  revalidatePath("/dashboard");
+}
+
+export async function setArtistOrigin(artistId: string, origin: ArtistOrigin) {
+  await requireUserId();
+  await prisma.artist.update({ where: { id: artistId }, data: { origin } });
+  revalidatePath("/dashboard");
 }
 
 // ---------- helpers ----------

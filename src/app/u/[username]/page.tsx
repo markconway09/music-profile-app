@@ -54,7 +54,12 @@ export default async function ProfilePage({
         ) : (
           <ol className="flex flex-col gap-2">
             {user.favoriteArtists.map((fa) => (
-              <RankedRow key={fa.artistId} rank={fa.rank} label={fa.artist.name} />
+              <RankedRow
+                key={fa.artistId}
+                rank={fa.rank}
+                label={fa.artist.name}
+                imageUrl={fa.artist.imageUrl}
+              />
             ))}
           </ol>
         )}
@@ -71,6 +76,7 @@ export default async function ProfilePage({
                 rank={ts.rank}
                 label={ts.song.title}
                 sublabel={ts.song.artist.name}
+                imageUrl={ts.song.imageUrl}
               />
             ))}
           </ol>
@@ -89,7 +95,12 @@ export default async function ProfilePage({
                 </h3>
                 <ol className="flex flex-col gap-2">
                   {rankings.map((r) => (
-                    <RankedRow key={r.memberId} rank={r.rank} label={r.member.name} />
+                    <RankedRow
+                      key={r.memberId}
+                      rank={r.rank}
+                      label={r.member.name}
+                      imageUrl={r.member.imageUrl}
+                    />
                   ))}
                 </ol>
               </div>
@@ -112,12 +123,24 @@ export default async function ProfilePage({
                   {biases.map((b) => (
                     <li
                       key={`${b.groupId}-${b.category}`}
-                      className="rounded-full border border-black/10 px-3 py-1 text-sm dark:border-white/20"
+                      className="flex items-center gap-2 rounded-full border border-black/10 py-1 pl-1 pr-3 text-sm dark:border-white/20"
                     >
-                      <span className="text-black/50 dark:text-white/50">
-                        {b.category.toLowerCase()}
-                      </span>{" "}
-                      · {b.member.name}
+                      {b.member.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.member.imageUrl}
+                          alt=""
+                          className="h-6 w-6 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="h-6 w-6 shrink-0 rounded-full bg-black/5 dark:bg-white/10" />
+                      )}
+                      <span>
+                        <span className="text-black/50 dark:text-white/50">
+                          {b.category.toLowerCase()}
+                        </span>{" "}
+                        · {b.member.name}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -143,16 +166,24 @@ function RankedRow({
   rank,
   label,
   sublabel,
+  imageUrl,
 }: {
   rank: number;
   label: string;
   sublabel?: string;
+  imageUrl?: string | null;
 }) {
   return (
     <li className="flex items-center gap-3 rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
       <span className="w-6 shrink-0 text-right text-sm font-semibold text-black/40 dark:text-white/40">
         {rank}
       </span>
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageUrl} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+      ) : (
+        <span className="h-10 w-10 shrink-0 rounded bg-black/5 dark:bg-white/10" />
+      )}
       <span className="flex-1">
         {label}
         {sublabel && (

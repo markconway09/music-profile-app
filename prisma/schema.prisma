@@ -39,11 +39,14 @@ enum ArtistOrigin {
 }
 
 model Artist {
-  id       String       @id @default(cuid())
-  name     String
-  type     ArtistType
-  origin   ArtistOrigin
-  imageUrl String?
+  id            String       @id @default(cuid())
+  name          String
+  type          ArtistType
+  origin        ArtistOrigin
+  imageUrl      String?
+  spotifyId     String?      @unique
+  musicbrainzId String?      @unique
+  createdAt     DateTime     @default(now())
 
   songs   Song[]
   members GroupMember[]
@@ -56,22 +59,34 @@ model Artist {
 }
 
 model Song {
-  id       String @id @default(cuid())
-  title    String
-  artistId String
-  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  id          String  @id @default(cuid())
+  title       String
+  artistId    String
+  imageUrl    String?
+  previewUrl  String?
+  spotifyId   String? @unique
+  artist      Artist  @relation(fields: [artistId], references: [id], onDelete: Cascade)
 
   topByUsers UserTopSong[]
 
   @@index([artistId])
 }
 
+// Source of a group member's data, so we know whether it's safe to
+// overwrite on a future MusicBrainz re-sync vs. a user's manual edit.
+enum MemberSource {
+  MUSICBRAINZ
+  MANUAL
+}
+
 model GroupMember {
-  id       String @id @default(cuid())
-  name     String
-  artistId String
-  imageUrl String?
-  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  id            String       @id @default(cuid())
+  name          String
+  artistId      String
+  imageUrl      String?
+  musicbrainzId String?      @unique
+  source        MemberSource @default(MANUAL)
+  artist        Artist       @relation(fields: [artistId], references: [id], onDelete: Cascade)
 
   rankedBy UserMemberRanking[]
   biasedBy UserBias[]
