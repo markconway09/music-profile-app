@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProfileData } from "@/lib/profile-data";
-import { Section, ArtistRow, Empty } from "@/components/profile/ProfilePieces";
+import { Section, ArtistCard, Empty } from "@/components/profile/ProfilePieces";
 
 export default async function AllArtistsPage({
   params,
@@ -15,7 +15,7 @@ export default async function AllArtistsPage({
   const { user, topSongByArtistId, biasesByGroupId } = data;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
+    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-8">
       <header className="mb-10">
         <Link
           href={`/u/${user.username}`}
@@ -30,9 +30,9 @@ export default async function AllArtistsPage({
         {user.favoriteArtists.length === 0 ? (
           <Empty />
         ) : (
-          <ol className="flex flex-col gap-2">
+          <ol className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {user.favoriteArtists.map((fa) => (
-              <ArtistRow
+              <ArtistCard
                 key={fa.artistId}
                 rank={fa.rank}
                 name={fa.artist.name}

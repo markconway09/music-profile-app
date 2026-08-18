@@ -138,6 +138,128 @@ function BiasBadge({
   );
 }
 
+/** Grid-card variant of ArtistRow — same expandable top-song/biases detail,
+ *  but leads with a large image instead of a compact row, for pages where
+ *  seeing the artist's picture is the point (the full favorites list). */
+export function ArtistCard({
+  rank,
+  name,
+  imageUrl,
+  topSong,
+  biases,
+}: {
+  rank: number;
+  name: string;
+  imageUrl: string | null;
+  topSong?: { song: { title: string; imageUrl: string | null } };
+  biases?: {
+    memberId: string;
+    isUlt: boolean;
+    member: { name: string; imageUrl: string | null };
+  }[];
+}) {
+  const ult = biases?.find((b) => b.isUlt);
+  const others = biases?.filter((b) => !b.isUlt) ?? [];
+  const hasDetails = Boolean(topSong) || Boolean(ult) || others.length > 0;
+
+  return (
+    <li className="group overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
+      <details>
+        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+          <div className="relative aspect-square w-full bg-black/5 dark:bg-white/10">
+            {imageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+            )}
+            <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs font-semibold text-white">
+              #{rank}
+            </span>
+            {hasDetails && (
+              <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white transition-transform group-open:rotate-90">
+                <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor">
+                  <path d="M7 4l6 6-6 6V4z" />
+                </svg>
+              </span>
+            )}
+          </div>
+          <p className="px-3 py-2 leading-snug font-medium">{name}</p>
+        </summary>
+
+        {hasDetails && (
+          <div className="flex flex-col gap-3 border-t border-black/10 px-3 py-3 dark:border-white/15">
+            {topSong && (
+              <div>
+                <p className="mb-1 text-xs text-black/40 dark:text-white/40">
+                  Highest-ranked song
+                </p>
+                <div className="flex items-center gap-2">
+                  {topSong.song.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={topSong.song.imageUrl}
+                      alt=""
+                      className="h-8 w-8 shrink-0 rounded object-cover"
+                    />
+                  ) : (
+                    <span className="h-8 w-8 shrink-0 rounded bg-black/5 dark:bg-white/10" />
+                  )}
+                  <span className="text-sm">{topSong.song.title}</span>
+                </div>
+              </div>
+            )}
+
+            {(ult || others.length > 0) && (
+              <div>
+                <p className="mb-1 text-xs text-black/40 dark:text-white/40">Biases</p>
+                <ul className="flex flex-wrap gap-2">
+                  {ult && <BiasBadge name={ult.member.name} imageUrl={ult.member.imageUrl} isUlt />}
+                  {others.map((b) => (
+                    <BiasBadge key={b.memberId} name={b.member.name} imageUrl={b.member.imageUrl} />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </details>
+    </li>
+  );
+}
+
+/** Grid-card variant of RankedRow — large image up top, label/sublabel
+ *  underneath, for pages where seeing the picture is the point. */
+export function RankedCard({
+  rank,
+  label,
+  sublabel,
+  imageUrl,
+}: {
+  rank: number;
+  label: string;
+  sublabel?: string;
+  imageUrl?: string | null;
+}) {
+  return (
+    <li className="overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
+      <div className="relative aspect-square w-full bg-black/5 dark:bg-white/10">
+        {imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        )}
+        <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs font-semibold text-white">
+          #{rank}
+        </span>
+      </div>
+      <div className="px-3 py-2">
+        <p className="leading-snug font-medium">{label}</p>
+        {sublabel && (
+          <p className="mt-0.5 truncate text-sm text-black/50 dark:text-white/50">{sublabel}</p>
+        )}
+      </div>
+    </li>
+  );
+}
+
 export function RankedRow({
   rank,
   label,

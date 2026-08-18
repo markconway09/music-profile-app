@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProfileData } from "@/lib/profile-data";
-import { Section, RankedRow, Empty } from "@/components/profile/ProfilePieces";
+import { Section, RankedCard, Empty } from "@/components/profile/ProfilePieces";
 
 export default async function AllUltBiasesPage({
   params,
@@ -15,7 +15,7 @@ export default async function AllUltBiasesPage({
   const { user, ultBiasesRanked } = data;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
+    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-8">
       <header className="mb-10">
         <Link
           href={`/u/${user.username}`}
@@ -30,9 +30,9 @@ export default async function AllUltBiasesPage({
         {ultBiasesRanked.length === 0 ? (
           <Empty />
         ) : (
-          <ol className="flex flex-col gap-2">
+          <ol className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {ultBiasesRanked.map((b, idx) => (
-              <RankedRow
+              <RankedCard
                 key={b.memberId}
                 rank={idx + 1}
                 label={b.member.name}
