@@ -93,6 +93,15 @@ model GroupMember {
   // enrichment — their manual fix is the final say, never silently
   // overwritten by a later automated re-check.
   manuallyEdited Boolean      @default(false)
+  // True when `name` came from the algorithmic character-by-character
+  // romanizer — the lowest-confidence source, used only when neither a
+  // MusicBrainz alias nor a Wikidata label was available. It can produce
+  // technically-Latin but wrong results (e.g. "Gimchaewon" instead of the
+  // real stage name "Chaewon", since it can't know where a surname ends).
+  // Without this flag, needsRomanization() sees an already-Latin string
+  // and treats the name as permanently resolved, so a later run where a
+  // better source *does* have data would never get a chance to fix it.
+  nameIsAlgorithmic Boolean   @default(false)
   artist         Artist       @relation(fields: [artistId], references: [id], onDelete: Cascade)
 
   biasedBy UserBias[]

@@ -198,7 +198,12 @@ export async function updateGroupMember(memberId: string, name: string, imageUrl
     where: { id: memberId },
     // A manual edit is the user's final say — mark it so a later
     // enrichment re-check doesn't come along and overwrite it.
-    data: { name: trimmed, imageUrl: imageUrl?.trim() || null, manuallyEdited: true },
+    data: {
+      name: trimmed,
+      imageUrl: imageUrl?.trim() || null,
+      manuallyEdited: true,
+      nameIsAlgorithmic: false,
+    },
   });
   await revalidateAfterEdit(userId, "/dashboard/artists");
 }
@@ -279,13 +284,19 @@ export async function enrichGroupMembers(
   for (const member of members) {
     if (!member.musicbrainzId) continue; // no MusicBrainz identity found for this one — nothing to enrich from
 
-    const needsName = needsRomanization(member.name);
+    // A name that's already Latin script is usually done — except when it
+    // got there via the algorithmic fallback, which can produce a
+    // technically-Latin but wrong result (e.g. "Gimchaewon" instead of the
+    // real stage name "Chaewon"). Those stay eligible for upgrade to a
+    // MusicBrainz alias / Wikidata label if one becomes available.
+    const needsName = needsRomanization(member.name) || member.nameIsAlgorithmic;
     const needsImage = !member.imageUrl;
     if (!needsName && !needsImage) continue; // already fully resolved, nothing to check
     checked++;
 
     let newName: string | null = null;
     let newImage: string | null = null;
+    let nameFromAlgorithmic = false;
 
     // Priority for the name: MusicBrainz's own English alias (most
     // authoritative — it's the actual official spelling), then Wikidata's
@@ -327,17 +338,20 @@ export async function enrichGroupMembers(
 
     if (needsName && !newName) {
       newName = algorithmicRomanize(member.name);
+      nameFromAlgorithmic = true;
     }
+
+    const nameChanged = newName !== null && newName !== member.name;
 
     await prisma.groupMember.update({
       where: { id: member.id },
       data: {
-        ...(newName ? { name: newName } : {}),
+        ...(newName !== null ? { name: newName, nameIsAlgorithmic: nameFromAlgorithmic } : {}),
         ...(newImage ? { imageUrl: newImage } : {}),
         enrichAttemptedAt: new Date(),
       },
     });
-    if (newName || newImage) updated++;
+    if (nameChanged || newImage) updated++;
   }
 
   await revalidateAfterEdit(userId, "/dashboard/artists");
